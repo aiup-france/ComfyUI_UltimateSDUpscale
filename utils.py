@@ -21,6 +21,40 @@ def tensor_to_pil(img_tensor, batch_index=0):
     img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8).squeeze())
     return img
 
+'''
+def tensor_to_pil(img_tensor, batch_index=0):
+    """
+    Converts a tensor image to a PIL image.
+    Args:
+        img_tensor: A tensor of shape [batch_size, channels, height, width].
+        batch_index: The index of the image in the batch to convert.
+    Returns:
+        A PIL Image.
+    """
+    # Select the image in the batch
+    img_tensor = img_tensor[batch_index]
+    
+    # Move channels to the last dimension
+    img_array = img_tensor.permute(1, 2, 0).cpu().numpy()
+    
+    # Scale to [0, 255] and ensure data type is uint8
+    img_array = (255.0 * img_array).clip(0, 255).astype(np.uint8)
+    
+    # Determine mode based on the number of channels
+    if img_array.shape[-1] == 1:  # Grayscale
+        img_array = img_array.squeeze(-1)  # Remove the single channel dimension
+        mode = "L"
+    elif img_array.shape[-1] == 3:  # RGB
+        mode = "RGB"
+    elif img_array.shape[-1] == 4:  # RGBA
+        mode = "RGBA"
+    else:
+        raise ValueError(f"Unsupported number of channels: {img_array.shape[-1]}")
+    
+    # Convert to PIL Image
+    return Image.fromarray(img_array, mode=mode)
+'''
+
 
 def pil_to_tensor(image):
     # Takes a PIL image and returns a tensor of shape [1, height, width, channels]
@@ -30,7 +64,26 @@ def pil_to_tensor(image):
         image = image.unsqueeze(-1)
     return image
 
-
+'''
+def pil_to_tensor(image):
+    
+ # Ensure the image is in RGB mode
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    
+    # Convert to NumPy array
+    image = np.array(image, dtype=np.float32)
+    
+    # Handle cases where the shape is unexpected
+    if image.shape[-1] != 3:  # Ensure it has exactly 3 channels
+        raise ValueError(f"Expected image with 3 channels (RGB), but got shape {image.shape}")
+    
+    # Normalize to [0, 1] and convert to PyTorch tensor
+    image = image / 255.0
+    tensor = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0)  # [1, C, H, W]
+    print("tensor",tensor.size())
+    return image
+'''
 def controlnet_hint_to_pil(tensor, batch_index=0):
     return tensor_to_pil(tensor.movedim(1, -1), batch_index)
 

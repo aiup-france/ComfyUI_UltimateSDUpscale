@@ -1,13 +1,66 @@
 from PIL import Image, ImageFilter
 import torch
 import math
-from nodes import common_ksampler, VAEEncode, VAEDecode, VAEDecodeTiled
-from comfy_extras.nodes_custom_sampler import SamplerCustom
-from utils import pil_to_tensor, tensor_to_pil, get_crop_region, expand_crop, crop_cond
-from modules import shared
-
+from core.tools.vae import  VAEEncode, VAEDecode, VAEDecodeTiled
+#from Imagen_extras.nodes_custom_sampler import SamplerCustom
+from core.ComfyUI_UltimateSDUpscale.utils import pil_to_tensor, tensor_to_pil, get_crop_region, expand_crop, crop_cond
+from core.ComfyUI_UltimateSDUpscale.modules import shared
+from core.tools.sampler import common_ksampler
 if (not hasattr(Image, 'Resampling')):  # For older versions of Pillow
     Image.Resampling = Image
+class SamplerCustom:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required":
+                    {"model": ("MODEL",),
+                    "add_noise": ("BOOLEAN", {"default": True}),
+                    "noise_seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+                    "cfg": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 100.0, "step":0.1, "round": 0.01}),
+                    "positive": ("CONDITIONING", ),
+                    "negative": ("CONDITIONING", ),
+                    "sampler": ("SAMPLER", ),
+                    "sigmas": ("SIGMAS", ),
+                    "latent_image": ("LATENT", ),
+                     }
+                }
+
+    RETURN_TYPES = ("LATENT","LATENT")
+    RETURN_NAMES = ("output", "denoised_output")
+
+    FUNCTION = "sample"
+
+    CATEGORY = "sampling/custom_sampling"
+
+    def sample(self, model, add_noise, noise_seed, cfg, positive, negative, sampler, sigmas, latent_image):
+        latent = latent_image
+        latent_image = latent["samples"]
+        latent = latent.copy()
+        latent_image = comfy.sample.fix_empty_latent_channels(model, latent_image)
+        latent["samples"] = latent_image
+
+        if not add_noise:
+            noise = Noise_EmptyNoise().generate_noise(latent)
+        else:
+            noise = Noise_RandomNoise(noise_seed).generate_noise(latent)
+
+        noise_mask = None
+        if "noise_mask" in latent:
+            noise_mask = latent["noise_mask"]
+
+        x0_output = {}
+        callback = latent_preview.prepare_callback(model, sigmas.shape[-1] - 1, x0_output)
+
+        disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
+        samples = comfy.sample.sample_custom(model, noise, cfg, sampler, sigmas, positive, negative, latent_image, noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=noise_seed)
+
+        out = latent.copy()
+        out["samples"] = samples
+        if "x0" in x0_output:
+            out_denoised = latent.copy()
+            out_denoised["samples"] = model.model.process_latent_out(x0_output["x0"].cpu())
+        else:
+            out_denoised = out
+        return (out, out_denoised)
 
 
 class StableDiffusionProcessing:
@@ -92,7 +145,7 @@ def sample(model, seed, steps, cfg, sampler_name, scheduler, positive, negative,
     # Custom sampler and sigmas
     if custom_sampler is not None and custom_sigmas is not None:
         custom_sample = SamplerCustom()
-        (samples, _) = getattr(custom_sample, custom_sample.FUNCTION)(
+        samples,_ = getattr(custom_sample, custom_sample.FUNCTION)(
             model=model,
             add_noise=True,
             noise_seed=seed,
@@ -106,7 +159,8 @@ def sample(model, seed, steps, cfg, sampler_name, scheduler, positive, negative,
         return samples
 
     # Default
-    (samples,) = common_ksampler(model, seed, steps, cfg, sampler_name,
+    
+    samples = common_ksampler(model, seed, steps, cfg, sampler_name,
                                  scheduler, positive, negative, latent, denoise=denoise)
     return samples
 
@@ -117,6 +171,7 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
     # Setup
     image_mask = p.image_mask.convert('L')
     init_image = p.init_images[0]
+    print("jkhhlklkjkl",init_image.mode)
 
     # Locate the white region of the mask outlining the tile and add padding
     crop_region = get_crop_region(image_mask, p.inpaint_full_res_padding)
@@ -166,19 +221,34 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
     negative_cropped = crop_cond(p.negative, crop_region, p.init_size, init_image.size, tile_size)
 
     # Encode the image
-    batched_tiles = torch.cat([pil_to_tensor(tile) for tile in tiles], dim=0)
-    (latent,) = p.vae_encoder.encode(p.vae, batched_tiles)
+    print("bhkbjkbjlnljntile",tile.mode)
 
+    batched_tiles = torch.cat([pil_to_tensor(tile) for tile in tiles], dim=0)
+    print("batched_tiles",batched_tiles.size()) 
+    # Convertir chaque image en RGB si elle n'est pas déjà en RGB
+    '''
+    batched_tiles = torch.cat([
+        pil_to_tensor(tile.convert("RGB")) if tile.mode != "RGB" else pil_to_tensor(tile)
+        for tile in tiles
+    ], dim=0)
+    '''
+  
+
+    # Vérification des dimensions après transformation
+    print("Dimensions des tiles après conversion en RGB :", batched_tiles.shape)
+    #(latent,)
+    latent = p.vae_encoder.encode(p.vae, batched_tiles)
+    
     # Generate samples
     samples = sample(p.model, p.seed, p.steps, p.cfg, p.sampler_name, p.scheduler, positive_cropped,
                      negative_cropped, latent, p.denoise, p.custom_sampler, p.custom_sigmas)
-
+   
     # Decode the sample
     if not p.tiled_decode:
-        (decoded,) = p.vae_decoder.decode(p.vae, samples)
+        decoded = p.vae_decoder.decode(p.vae, samples)
     else:
         print("[USDU] Using tiled decode")
-        (decoded,) = p.vae_decoder_tiled.decode(p.vae, samples, 512)  # Default tile size is 512
+        decoded = p.vae_decoder_tiled.decode(p.vae, samples, 512)  # Default tile size is 512
 
     # Convert the sample to a PIL image
     tiles_sampled = [tensor_to_pil(decoded, i) for i in range(len(decoded))]
