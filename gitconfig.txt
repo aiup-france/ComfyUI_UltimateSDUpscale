@@ -1,0 +1,60 @@
+[user]
+    name = Username
+    email = username@mail.com
+[color]
+    ui = auto
+[alias]
+    st = status
+    ci = commit
+    co = checkout
+    lg = log --all --graph --pretty=tformat:'%Cred%h%Creset -%C(auto)%d%Creset %s %Cgreen(%an %cr)%Creset'
+    # fetch latest data from remote repo, but do not update local checkout and then display differences
+    ulg = !(git fetch && git lg ..@{u})
+    llg = !(git lg @{u}..)
+    ready = rebase -i @{u}
+    oops = !(git ci --amend -C HEAD)
+    sortag = "!(git for-each-ref --sort=taggerdate --format '%(refname) %(taggerdate)' refs/tags)"
+[core]
+    pager = less
+    #
+    # Out of luck: on Windows w/o msysGit? You may have Notepad++â€¦
+    # editor = 'C:/Program Files/Notepad++/notepad++.exe' -multiInst -notabbar -nosession -noPlugin
+    #
+    # If you want to use Sublime Text 2's subl wrapper:
+    # editor = subl -w
+    #
+    whitespace = -trailing-space
+    editor = vim
+[diff]
+    mnemonicPrefix = true
+    wordRegex = .
+[fetch]
+    recurseSubmodules = on-demand
+[grep]
+    extendedRegexp = true
+[log]
+    abbrevCommit = true
+[merge]
+    conflictStyle = diff3
+    tool = meld
+    renameLimit = 999999
+[mergetool]
+    keepBackup = false
+    keepTemporaries = false
+    prompt = false
+[pull]
+    # This is GREATâ€¦ when you know what you're doing and are careful
+    # not to pull --no-rebase over a local line containing a true merge.
+    # rebase = true
+    # WARNING! This option, which does away with the one gotcha of
+    # auto-rebasing on pulls, is only available from 1.8.5 onwards.
+    rebase = merges
+[push]
+    default = upstream
+[rerere]
+    autoupdate = true
+    enabled = true
+[status]
+    submoduleSummary = true
+[remote "origin"]
+    prune = true
